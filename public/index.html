@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Control de acceso</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="logo" style="margin: 0 auto 16px;">&#127970;</div>
+    <h1 style="text-align:center;">Control de acceso</h1>
+
+    <div class="login-tabs">
+      <button type="button" class="login-tab active" id="tab-login">Iniciar sesión</button>
+      <button type="button" class="login-tab" id="tab-registro">Registrarme</button>
+    </div>
+
+    <form id="form-login">
+      <div class="field">
+        <label>Usuario o email</label>
+        <input type="text" id="login-usuario" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="login-password" autocomplete="current-password" />
+      </div>
+      <p class="error-text" id="login-error" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Ingresar</button>
+      <button type="button" class="link-button" id="btn-abrir-recuperar">¿Olvidaste tu usuario o contraseña?</button>
+    </form>
+
+    <form id="form-registro" style="display:none;">
+      <div class="field">
+        <label>Nombre de usuario</label>
+        <input type="text" id="registro-usuario" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="registro-email" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label>Documento (DNI / legajo)</label>
+        <input type="text" id="registro-documento" placeholder="El mismo con el que te dio de alta un administrador" />
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="registro-password" autocomplete="new-password" />
+      </div>
+      <p class="error-text" id="registro-error" style="display:none;"></p>
+      <p class="success-text" id="registro-exito" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Crear cuenta</button>
+    </form>
+  </div>
+</div>
+
+<div class="wrap" id="app-wrap" style="display:none;">
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">&#127970;</div>
+      <div>
+        <h1>Control de acceso</h1>
+        <p class="subtitle" id="fecha-hora"></p>
+        <p class="badge-conexion online" id="badge-conexion">Conectado</p>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="btn-primary" id="btn-abrir-modal">+ Agregar persona</button>
+      <button class="btn-logout" id="btn-abrir-usuarios" title="Gestionar usuarios">&#128273;</button>
+      <button class="btn-logout" id="btn-logout" title="Cerrar sesión">&#8618;</button>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <p class="metric-label">Personal registrado</p>
+      <p class="metric-value" id="m-total">0</p>
+    </div>
+    <div class="metric green">
+      <p class="metric-label">Actualmente adentro</p>
+      <p class="metric-value" id="m-dentro">0</p>
+    </div>
+    <div class="metric">
+      <p class="metric-label">Movimientos hoy</p>
+      <p class="metric-value" id="m-hoy">0</p>
+    </div>
+    <div class="metric alert" id="metric-tarde">
+      <p class="metric-label">Llegadas tarde hoy</p>
+      <p class="metric-value" id="m-tarde">0</p>
+    </div>
+  </div>
+
+  <div class="search-wrap">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" id="buscar" placeholder="Buscar por nombre, legajo o área..." />
+  </div>
+
+  <div class="card">
+    <ul class="list" id="lista-empleados"></ul>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span>Historial de movimientos</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <input type="date" id="filtro-fecha" />
+        <button type="button" class="btn-exportar" id="btn-exportar" title="Exportar a Excel">&#128190; Exportar</button>
+      </div>
+    </div>
+    <div id="lista-historial"></div>
+  </div>
+
+  <p class="footer-note" id="nota-guardado">Los datos se guardan automáticamente en este navegador.</p>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Agregar persona</h2>
+      <button class="modal-close" id="btn-cerrar-modal">&#10005;</button>
+    </div>
+    <form id="form-agregar">
+      <div class="field">
+        <label>Nombre completo</label>
+        <input type="text" id="in-nombre" placeholder="Ej: Juana Pérez" />
+      </div>
+      <div class="field">
+        <label>Legajo o DNI</label>
+        <input type="text" id="in-legajo" placeholder="Ej: 4521" />
+      </div>
+      <div class="field">
+        <label>Área (opcional)</label>
+        <input type="text" id="in-area" placeholder="Ej: Administración" />
+      </div>
+      <p class="error-text" id="form-error" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-turno-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Horario esperado</h2>
+      <button class="modal-close" id="btn-cerrar-modal-turno">&#10005;</button>
+    </div>
+    <p class="subtitle" id="turno-emp-nombre" style="margin-bottom:14px;"></p>
+    <form id="form-turno">
+      <input type="hidden" id="turno-empleado-id" />
+      <div class="field">
+        <label>Hora de entrada esperada</label>
+        <input type="time" id="turno-hora" />
+      </div>
+      <div class="field">
+        <label>Tolerancia antes de considerarlo tarde (minutos)</label>
+        <input type="number" id="turno-tolerancia" min="0" placeholder="Ej: 10" />
+      </div>
+      <p class="error-text" id="turno-error" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Guardar horario</button>
+      <button type="button" class="btn-quitar-turno" id="btn-quitar-turno">Quitar horario asignado</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-recuperar-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Recuperar acceso</h2>
+      <button class="modal-close" id="btn-cerrar-recuperar">&#10005;</button>
+    </div>
+
+    <div class="login-tabs">
+      <button type="button" class="login-tab active" id="tab-recuperar-usuario">Olvidé mi usuario</button>
+      <button type="button" class="login-tab" id="tab-recuperar-password">Olvidé mi contraseña</button>
+    </div>
+
+    <form id="form-recuperar-usuario">
+      <p class="subtitle" style="margin-bottom:14px;">Te enviamos tu nombre de usuario por correo.</p>
+      <div class="field">
+        <label>Email registrado</label>
+        <input type="email" id="recuperar-usuario-email" />
+      </div>
+      <p class="error-text" id="recuperar-usuario-error" style="display:none;"></p>
+      <p class="success-text" id="recuperar-usuario-exito" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Enviar</button>
+    </form>
+
+    <form id="form-recuperar-password" style="display:none;">
+      <p class="subtitle" style="margin-bottom:14px;">Te enviamos un código de 6 dígitos por correo.</p>
+      <div class="field">
+        <label>Email registrado</label>
+        <input type="email" id="recuperar-password-email" />
+      </div>
+      <button type="button" class="btn-submit" id="btn-enviar-codigo" style="background:#475569;">Enviar código</button>
+
+      <div id="bloque-codigo" style="display:none; margin-top:14px;">
+        <div class="field">
+          <label>Código recibido</label>
+          <input type="text" id="recuperar-codigo" maxlength="6" placeholder="123456" />
+        </div>
+        <div class="field">
+          <label>Nueva contraseña</label>
+          <input type="password" id="recuperar-nueva-password" autocomplete="new-password" />
+        </div>
+      </div>
+
+      <p class="error-text" id="recuperar-password-error" style="display:none;"></p>
+      <p class="success-text" id="recuperar-password-exito" style="display:none;"></p>
+      <button type="submit" class="btn-submit" id="btn-confirmar-codigo" style="display:none;">Cambiar contraseña</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-captura-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="captura-titulo">Verificar fichaje</h2>
+      <button class="modal-close" id="btn-cerrar-captura">&#10005;</button>
+    </div>
+
+    <p class="subtitle" id="captura-estado-ubicacion" style="margin-bottom:10px;">Obteniendo ubicación…</p>
+
+    <div id="captura-video-wrap" style="position:relative; border-radius:10px; overflow:hidden; background:#0f172a; aspect-ratio:4/3;">
+      <video id="captura-video" autoplay playsinline style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+      <img id="captura-preview" style="width:100%; height:100%; object-fit:cover; display:none;" />
+    </div>
+    <canvas id="captura-canvas" style="display:none;"></canvas>
+
+    <p class="error-text" id="captura-error" style="display:none; margin-top:10px;"></p>
+
+    <button type="button" class="btn-submit" id="btn-tomar-foto" style="margin-top:14px;">Tomar foto</button>
+    <div id="captura-acciones-confirmar" style="display:none; gap:8px; margin-top:14px;">
+      <button type="button" class="btn-submit" id="btn-confirmar-captura" style="flex:1;">Confirmar fichaje</button>
+      <button type="button" class="btn-quitar-turno" id="btn-repetir-foto" style="width:auto; flex:1;">Repetir foto</button>
+    </div>
+    <button type="button" class="link-button" id="btn-omitir-captura">Marcar sin foto (requiere admin)</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-ver-foto-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Verificación del fichaje</h2>
+      <button class="modal-close" id="btn-cerrar-ver-foto">&#10005;</button>
+    </div>
+    <img id="ver-foto-img" style="width:100%; border-radius:10px; display:block;" />
+    <p class="subtitle" id="ver-foto-ubicacion" style="margin-top:10px;"></p>
+    <a id="ver-foto-mapa-link" href="#" target="_blank" class="link-button" style="display:none;">Ver ubicación en el mapa</a>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-usuarios-overlay">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h2>Gestionar usuarios</h2>
+      <button class="modal-close" id="btn-cerrar-usuarios">&#10005;</button>
+    </div>
+
+    <div id="lista-usuarios" style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; margin-bottom:16px;"></div>
+
+    <p class="subtitle" style="margin-bottom:10px;">Crear nueva cuenta</p>
+    <form id="form-usuario">
+      <div class="field">
+        <label>Nombre de usuario</label>
+        <input type="text" id="usuario-nuevo-usuario" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="usuario-nuevo-email" />
+      </div>
+      <div class="field">
+        <label>Rol</label>
+        <select id="usuario-nuevo-rol" style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:14px;">
+          <option value="empleado">Empleado (solo su propio fichaje)</option>
+          <option value="admin">Administrador (acceso total)</option>
+        </select>
+      </div>
+      <div class="field" id="campo-empleado-vinculado">
+        <label>Vincular con esta ficha de personal</label>
+        <select id="usuario-nuevo-empleado" style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:14px;"></select>
+      </div>
+      <p class="error-text" id="usuario-error" style="display:none;"></p>
+      <p class="success-text" id="usuario-exito" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Crear cuenta y enviar invitación por mail</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
