@@ -408,6 +408,24 @@ app.post("/api/usuarios/:id/reenviar-activacion", requiereAdmin, async (req, res
   }
 });
 
+// Definir una contraseña a mano (sin mail): la administradora se la pasa a la persona
+app.post("/api/usuarios/:id/password", requiereAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (typeof password !== "string" || password.length < 6 || password.length > 100) {
+      return res.status(400).json({ error: "La contraseña debe tener entre 6 y 100 caracteres." });
+    }
+    const [rows] = await pool.query("SELECT id FROM usuarios WHERE id = ?", [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: "Usuario no encontrado." });
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query("UPDATE usuarios SET password_hash = ?, activo = TRUE WHERE id = ?", [hash, req.params.id]);
+    res.json({ mensaje: "Contraseña definida. Pasásela a la persona." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "No se pudo definir la contraseña." });
+  }
+});
+
 // Eliminar una cuenta de acceso (no la ficha de personal, solo el login)
 app.delete("/api/usuarios/:id", requiereAdmin, async (req, res) => {
   try {

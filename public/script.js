@@ -1111,6 +1111,7 @@
         '</div>' +
         '<div style="display:flex; gap:2px;">' +
           (u.tienePassword ? '' : '<button class="btn-mini" data-id="' + u.id + '" data-accion="reenviar">Reenviar</button>') +
+          '<button class="btn-mini" data-id="' + u.id + '" data-accion="clave">Definir clave</button>' +
           '<button class="btn-mini" data-id="' + u.id + '" data-accion="eliminar">Eliminar</button>' +
         '</div>';
       cont.appendChild(div);
@@ -1119,9 +1120,25 @@
     cont.querySelectorAll('[data-accion="reenviar"]').forEach(function (btn) {
       btn.addEventListener("click", function () { reenviarActivacion(btn.getAttribute("data-id")); });
     });
+    cont.querySelectorAll('[data-accion="clave"]').forEach(function (btn) {
+      btn.addEventListener("click", function () { definirClave(btn.getAttribute("data-id")); });
+    });
     cont.querySelectorAll('[data-accion="eliminar"]').forEach(function (btn) {
       btn.addEventListener("click", function () { eliminarUsuario(btn.getAttribute("data-id")); });
     });
+  }
+
+  async function definirClave(id) {
+    var clave = prompt("Escribí la contraseña nueva para esta cuenta (mínimo 6 caracteres). Después pasásela a la persona:");
+    if (clave === null) return;
+    if (clave.length < 6) { alert("La contraseña debe tener al menos 6 caracteres."); return; }
+    try {
+      var data = await apiPost("/usuarios/" + id + "/password", { password: clave });
+      mostrarToast(data.mensaje || "Contraseña definida.", false);
+      cargarUsuarios();
+    } catch (err) {
+      if (err.message !== "Sesión vencida") alert(err.message);
+    }
   }
 
   async function reenviarActivacion(id) {
