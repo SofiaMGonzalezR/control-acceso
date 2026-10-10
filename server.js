@@ -39,6 +39,31 @@ const transporter = nodemailer.createTransport({
 });
 
 async function enviarEmail(destinatario, asunto, texto) {
+  // Railway bloquea SMTP: si hay clave de Brevo, enviamos por API (HTTPS)
+  if (process.env.BREVO_API_KEY) {
+    const respuesta = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        sender: {
+          name: process.env.MAIL_NOMBRE || "Control de accesos",
+          email: process.env.MAIL_REMITENTE,
+        },
+        to: [{ email: destinatario }],
+        subject: asunto,
+        textContent: texto,
+      }),
+    });
+    if (!respuesta.ok) {
+      const detalle = await respuesta.text();
+      throw new Error("Brevo " + respuesta.status + ": " + detalle);
+    }
+    return;
+  }
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to: destinatario,
