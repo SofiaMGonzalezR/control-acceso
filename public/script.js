@@ -657,7 +657,7 @@
       var badgePendiente = m.pendienteSync
         ? '<span class="badge-pendiente">&#8635; Sin sincronizar</span>'
         : '';
-      var botonFoto = (m.foto || (m.latitud != null && m.longitud != null))
+      var botonFoto = (m.foto || tieneUbicacion(m))
         ? '<button class="btn-foto" data-clientid="' + (m.clientId || m.id) + '" aria-label="Ver verificación">&#128247;</button>'
         : '';
       var botonEditar = (esAdmin() && !m.pendienteSync && m.id)
@@ -683,7 +683,7 @@
         });
       }
 
-      if (m.foto || (m.latitud != null && m.longitud != null)) {
+      if (m.foto || tieneUbicacion(m)) {
         div.querySelector(".btn-foto").addEventListener("click", function () {
           verFotoMovimiento(m);
         });
@@ -834,6 +834,11 @@
 
   // --- Ver foto/ubicación de un movimiento ya registrado ---
 
+  // Los fichajes viejos pueden tener 0,0 guardado por error: se tratan como "sin ubicación"
+  function tieneUbicacion(m) {
+    return m.latitud != null && m.longitud != null && !(Number(m.latitud) === 0 && Number(m.longitud) === 0);
+  }
+
   function verFotoMovimiento(movimiento) {
     var img = document.getElementById("ver-foto-img");
     var ubic = document.getElementById("ver-foto-ubicacion");
@@ -842,7 +847,7 @@
     img.style.display = movimiento.foto ? "block" : "none";
     img.src = movimiento.foto || "";
 
-    if (movimiento.latitud != null && movimiento.longitud != null) {
+    if (tieneUbicacion(movimiento)) {
       var latNum = Number(movimiento.latitud);
       var lngNum = Number(movimiento.longitud);
       ubic.textContent = "Ubicación: " + latNum.toFixed(5) + ", " + lngNum.toFixed(5);

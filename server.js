@@ -608,8 +608,12 @@ app.post("/api/empleados/:id/marcar", async (req, res) => {
     }
 
     const fotoGuardar = validarFoto(foto);
-    const lat = Number.isFinite(Number(latitud)) ? Number(latitud) : null;
-    const lng = Number.isFinite(Number(longitud)) ? Number(longitud) : null;
+    // Number(null) da 0, así que primero verificamos que realmente venga un valor
+    const coordenadaValida = (v, max) =>
+      v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) && Math.abs(Number(v)) <= max;
+    let lat = coordenadaValida(latitud, 90) ? Number(latitud) : null;
+    let lng = coordenadaValida(longitud, 180) ? Number(longitud) : null;
+    if (lat === null || lng === null || (lat === 0 && lng === 0)) { lat = null; lng = null; }
 
     let llegoTarde = false;
     let minutosTarde = null;
