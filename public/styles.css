@@ -131,3 +131,7 @@ ul.list li:hover { background: #f8fafc; }
 .btn-mini:hover { color: #0f172a; background: #f1f5f9; }
 #captura-acciones-confirmar { display: none; }
 #captura-acciones-confirmar.mostrar { display: flex; }
+
+.btn-manual, .btn-editar-mov { background: none; border: none; padding: 6px; border-radius: 8px; color: #cbd5e1; cursor: pointer; }
+.btn-manual:hover, .btn-editar-mov:hover { color: #0f172a; background: #f1f5f9; }
+.field select { width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; font: inherit; background: #fff; }

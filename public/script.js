@@ -212,6 +212,21 @@
     return data;
   }
 
+  async function apiPut(path, body) {
+    var res = await fetch(API_URL + path, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + getToken(),
+      },
+      body: JSON.stringify(body || {}),
+    });
+    if (res.status === 401) { manejarSesionVencida(); throw new Error("Sesión vencida"); }
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || "Error en " + path);
+    return data;
+  }
+
   async function apiDelete(path) {
     var res = await fetch(API_URL + path, {
       method: "DELETE",
@@ -595,6 +610,7 @@
           '<button class="btn-mark ' + (emp.dentro ? "out" : "in") + '" data-id="' + emp.id + '">' +
             (emp.dentro ? "Marcar egreso" : "Marcar ingreso") +
           '</button>' +
+          (esAdmin() ? '<button class="btn-manual" data-id="' + emp.id + '" aria-label="Cargar fichaje olvidado" title="Cargar fichaje olvidado">&#9998;</button>' : '') +
           (esAdmin() ? '<button class="btn-turno" data-id="' + emp.id + '" aria-label="Asignar horario">&#128337;</button>' : '') +
           (esAdmin() ? '<button class="btn-del" data-id="' + emp.id + '" aria-label="Eliminar">&#128465;</button>' : '') +
         '</div>';
@@ -609,6 +625,11 @@
     ul.querySelectorAll(".btn-del").forEach(function (btn) {
       btn.addEventListener("click", function () {
         eliminarEmpleado(btn.getAttribute("data-id"));
+      });
+    });
+    ul.querySelectorAll(".btn-manual").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        abrirModalManual(btn.getAttribute("data-id"), null);
       });
     });
     ul.querySelectorAll(".btn-turno").forEach(function (btn) {
@@ -639,6 +660,9 @@
       var botonFoto = (m.foto || (m.latitud != null && m.longitud != null))
         ? '<button class="btn-foto" data-clientid="' + (m.clientId || m.id) + '" aria-label="Ver verificación">&#128247;</button>'
         : '';
+      var botonEditar = (esAdmin() && !m.pendienteSync && m.id)
+        ? '<button class="btn-editar-mov" aria-label="Editar horario" title="Editar horario">&#9998;</button>'
+        : '';
       var div = document.createElement("div");
       div.className = "hist-item";
       div.innerHTML =
@@ -649,8 +673,15 @@
           badge +
           badgePendiente +
         '</div>' +
-        '<div class="hist-time">' + formatFecha(m.timestamp) + ' · ' + formatHora(m.timestamp) + botonFoto + '</div>';
+        '<div class="hist-time">' + formatFecha(m.timestamp) + ' · ' + formatHora(m.timestamp) + botonFoto + botonEditar + '</div>';
       cont.appendChild(div);
+
+      var btnEditar = div.querySelector(".btn-editar-mov");
+      if (btnEditar) {
+        btnEditar.addEventListener("click", function () {
+          abrirModalManual(m.empleadoId, m);
+        });
+      }
 
       if (m.foto || (m.latitud != null && m.longitud != null)) {
         div.querySelector(".btn-foto").addEventListener("click", function () {
@@ -923,6 +954,90 @@
       renderTodo();
     } catch (err) {
       if (err.message !== "Sesión vencida") alert(err.message);
+    }
+  }
+
+  // --- Admin: cargar un fichaje olvidado / editar la hora de uno existente ---
+
+  function aValorDatetimeLocal(fecha) {
+    function dos(n) { return (n < 10 ? "0" : "") + n; }
+    return fecha.getFullYear() + "-" + dos(fecha.getMonth() + 1) + "-" + dos(fecha.getDate()) +
+      "T" + dos(fecha.getHours()) + ":" + dos(fecha.getMinutes());
+  }
+
+  function abrirModalManual(empleadoId, movimiento) {
+    var emp = empleados.find(function (e) { return e.id === empleadoId; });
+    var nombre = emp ? emp.nombre : (movimiento ? movimiento.nombre : "");
+
+    document.getElementById("manual-empleado-id").value = empleadoId;
+    document.getElementById("manual-movimiento-id").value = movimiento ? movimiento.id : "";
+    document.getElementById("manual-emp-nombre").textContent = nombre;
+    document.getElementById("manual-error").style.display = "none";
+
+    var ahora = new Date();
+    document.getElementById("manual-fecha-hora").max = aValorDatetimeLocal(ahora);
+
+    if (movimiento) {
+      document.getElementById("manual-titulo").textContent = "Editar horario de " + (movimiento.tipo === "ingreso" ? "ingreso" : "egreso");
+      document.getElementById("manual-campo-tipo").style.display = "none";
+      document.getElementById("manual-fecha-hora").value = aValorDatetimeLocal(new Date(movimiento.timestamp));
+    } else {
+      document.getElementById("manual-titulo").textContent = "Cargar fichaje olvidado";
+      document.getElementById("manual-campo-tipo").style.display = "block";
+      document.getElementById("manual-tipo").value = emp && emp.dentro ? "egreso" : "ingreso";
+      document.getElementById("manual-fecha-hora").value = aValorDatetimeLocal(ahora);
+    }
+    document.getElementById("modal-manual-overlay").classList.add("open");
+  }
+
+  function cerrarModalManual() {
+    document.getElementById("modal-manual-overlay").classList.remove("open");
+  }
+
+  async function guardarManual(e) {
+    e.preventDefault();
+    var empleadoId = document.getElementById("manual-empleado-id").value;
+    var movId = document.getElementById("manual-movimiento-id").value;
+    var fechaHora = document.getElementById("manual-fecha-hora").value;
+    var err = document.getElementById("manual-error");
+
+    if (!fechaHora) {
+      err.textContent = "Ingresá la fecha y la hora.";
+      err.style.display = "block";
+      return;
+    }
+    if (!requiereConexion()) return;
+
+    try {
+      if (movId) {
+        var r = await apiPut("/movimientos/" + movId, { fechaHora: fechaHora });
+        movimientos = movimientos.map(function (m) {
+          return m.id === movId
+            ? Object.assign({}, m, { timestamp: r.movimiento.timestamp, llegoTarde: r.movimiento.llegoTarde, minutosTarde: r.movimiento.minutosTarde })
+            : m;
+        });
+        empleados = empleados.map(function (emp) {
+          return emp.id === r.empleadoId ? Object.assign({}, emp, { dentro: r.dentro }) : emp;
+        });
+      } else {
+        var data = await apiPost("/movimientos/manual", {
+          empleadoId: empleadoId,
+          tipo: document.getElementById("manual-tipo").value,
+          fechaHora: fechaHora,
+        });
+        movimientos.push(data.movimiento);
+        empleados = empleados.map(function (emp) { return emp.id === data.empleado.id ? data.empleado : emp; });
+      }
+      movimientos.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+      guardarCache();
+      cerrarModalManual();
+      renderTodo();
+      mostrarToast("Horario guardado.", false);
+    } catch (e2) {
+      if (e2.message !== "Sesión vencida") {
+        err.textContent = e2.message;
+        err.style.display = "block";
+      }
     }
   }
 
@@ -1300,6 +1415,11 @@
     document.getElementById("buscar").addEventListener("input", renderLista);
     document.getElementById("filtro-fecha").addEventListener("change", recargarHistorialPorFecha);
     document.getElementById("btn-exportar").addEventListener("click", exportarHistorial);
+    document.getElementById("form-manual").addEventListener("submit", guardarManual);
+    document.getElementById("btn-cerrar-manual").addEventListener("click", cerrarModalManual);
+    document.getElementById("modal-manual-overlay").addEventListener("click", function (e) {
+      if (e.target.id === "modal-manual-overlay") cerrarModalManual();
+    });
     document.getElementById("form-turno").addEventListener("submit", guardarTurno);
     document.getElementById("btn-cerrar-modal-turno").addEventListener("click", cerrarModalTurno);
     document.getElementById("btn-quitar-turno").addEventListener("click", quitarTurno);

@@ -1,4 +1,7 @@
 require("dotenv").config();
+// Railway corre en horario UTC. Fijamos la zona horaria de Argentina para que las horas
+// de entrada, la tolerancia y los "llegó tarde" se calculen con el horario local.
+process.env.TZ = process.env.TZ || "America/Argentina/Buenos_Aires";
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
@@ -663,6 +666,125 @@ app.post("/api/empleados/:id/marcar", async (req, res) => {
 });
 
 // --- MOVIMIENTOS ---
+
+// Calcula si un ingreso en la fecha dada es tarde, según el turno del empleado
+async function calcularTarde(conn, empleadoId, fecha) {
+  const [turnoRows] = await conn.query("SELECT * FROM turnos WHERE empleado_id = ?", [empleadoId]);
+  if (turnoRows.length === 0) return { llegoTarde: false, minutosTarde: null };
+  const turno = turnoRows[0];
+  const [h, m, s] = String(turno.hora_entrada).split(":").map(Number);
+  const limite = new Date(fecha);
+  limite.setHours(h, m, s || 0, 0);
+  limite.setMinutes(limite.getMinutes() + turno.tolerancia_minutos);
+  if (fecha > limite) {
+    return { llegoTarde: true, minutosTarde: Math.round((fecha - limite) / 60000) };
+  }
+  return { llegoTarde: false, minutosTarde: null };
+}
+
+// Interpreta "YYYY-MM-DDTHH:mm" (hora local) y valida que sea razonable
+function parsearFechaHora(valor) {
+  if (typeof valor !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(valor)) return null;
+  const f = new Date(valor);
+  if (isNaN(f.getTime())) return null;
+  if (f.getTime() > Date.now() + 5 * 60 * 1000) return null; // no se permiten horas futuras
+  return f;
+}
+
+// Deja el estado "dentro" del empleado según su último movimiento
+async function recalcularDentro(conn, empleadoId) {
+  const [ult] = await conn.query(
+    "SELECT tipo FROM movimientos WHERE empleado_id = ? ORDER BY fecha_hora DESC LIMIT 1",
+    [empleadoId]
+  );
+  const dentro = ult.length > 0 && ult[0].tipo === "ingreso";
+  await conn.query("UPDATE empleados SET dentro = ? WHERE id = ?", [dentro, empleadoId]);
+  return dentro;
+}
+
+// Cargar a mano un ingreso/egreso olvidado (solo admin)
+app.post("/api/movimientos/manual", requiereAdmin, async (req, res) => {
+  const { empleadoId, tipo, fechaHora } = req.body || {};
+  if (!empleadoId) return res.status(400).json({ error: "Elegí a la persona." });
+  if (tipo !== "ingreso" && tipo !== "egreso") return res.status(400).json({ error: "El tipo debe ser ingreso o egreso." });
+  const fecha = parsearFechaHora(fechaHora);
+  if (!fecha) return res.status(400).json({ error: "Ingresá una fecha y hora válidas (no pueden ser futuras)." });
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query("SELECT * FROM empleados WHERE id = ?", [empleadoId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Empleado no encontrado." });
+    const emp = rows[0];
+
+    let llegoTarde = false;
+    let minutosTarde = null;
+    if (tipo === "ingreso") {
+      ({ llegoTarde, minutosTarde } = await calcularTarde(conn, emp.id, fecha));
+    }
+
+    await conn.beginTransaction();
+    const movId = uid();
+    await conn.query(
+      "INSERT INTO movimientos (id, empleado_id, nombre, legajo, area, tipo, fecha_hora, llego_tarde, minutos_tarde, foto, latitud, longitud) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)",
+      [movId, emp.id, emp.nombre, emp.legajo, emp.area, tipo, fecha, llegoTarde, minutosTarde]
+    );
+    const dentro = await recalcularDentro(conn, emp.id);
+    await conn.commit();
+
+    res.status(201).json({
+      empleado: { id: emp.id, nombre: emp.nombre, legajo: emp.legajo, area: emp.area, dentro },
+      movimiento: {
+        id: movId, empleadoId: emp.id, nombre: emp.nombre, legajo: emp.legajo, area: emp.area, tipo,
+        timestamp: fecha.toISOString(), llegoTarde, minutosTarde, foto: null, latitud: null, longitud: null,
+      },
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "No se pudo cargar el fichaje." });
+  } finally {
+    conn.release();
+  }
+});
+
+// Cambiar la fecha/hora de un movimiento ya registrado (solo admin)
+app.put("/api/movimientos/:id", requiereAdmin, async (req, res) => {
+  const fecha = parsearFechaHora((req.body || {}).fechaHora);
+  if (!fecha) return res.status(400).json({ error: "Ingresá una fecha y hora válidas (no pueden ser futuras)." });
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query("SELECT * FROM movimientos WHERE id = ?", [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: "Movimiento no encontrado." });
+    const mov = rows[0];
+
+    let llegoTarde = false;
+    let minutosTarde = null;
+    if (mov.tipo === "ingreso") {
+      ({ llegoTarde, minutosTarde } = await calcularTarde(conn, mov.empleado_id, fecha));
+    }
+
+    await conn.beginTransaction();
+    await conn.query(
+      "UPDATE movimientos SET fecha_hora = ?, llego_tarde = ?, minutos_tarde = ? WHERE id = ?",
+      [fecha, llegoTarde, minutosTarde, mov.id]
+    );
+    const dentro = await recalcularDentro(conn, mov.empleado_id);
+    await conn.commit();
+
+    res.json({
+      empleadoId: mov.empleado_id,
+      dentro,
+      movimiento: { id: mov.id, timestamp: fecha.toISOString(), llegoTarde, minutosTarde },
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "No se pudo cambiar el horario." });
+  } finally {
+    conn.release();
+  }
+});
 
 // Exportar historial completo a Excel (.xlsx) — respeta el mismo filtro de fecha
 // y las mismas restricciones de un usuario "empleado" que el resto del historial.

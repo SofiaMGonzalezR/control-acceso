@@ -164,6 +164,33 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-manual-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="manual-titulo">Cargar fichaje</h2>
+      <button class="modal-close" id="btn-cerrar-manual">&#10005;</button>
+    </div>
+    <p class="subtitle" id="manual-emp-nombre" style="margin-bottom:14px;"></p>
+    <form id="form-manual">
+      <input type="hidden" id="manual-empleado-id" />
+      <input type="hidden" id="manual-movimiento-id" />
+      <div class="field" id="manual-campo-tipo">
+        <label>Tipo de fichaje</label>
+        <select id="manual-tipo">
+          <option value="ingreso">Ingreso</option>
+          <option value="egreso">Egreso</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fecha y hora</label>
+        <input type="datetime-local" id="manual-fecha-hora" />
+      </div>
+      <p class="error-text" id="manual-error" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Guardar</button>
+    </form>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-recuperar-overlay">
   <div class="modal">
     <div class="modal-header">
