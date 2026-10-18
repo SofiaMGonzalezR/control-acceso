@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Panel de empresas</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 20px 16px; }
+    .caja { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p.sub { color: #64748b; margin: 0 0 18px; font-size: 14px; }
+    form { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+    input { flex: 1; min-width: 200px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; }
+    button { padding: 10px 16px; border: 0; border-radius: 10px; background: #0f172a; color: #fff; font: inherit; cursor: pointer; }
+    .error { color: #b91c1c; font-size: 14px; margin: 0 0 12px; }
+    .tabla-wrap { overflow-x: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    th { color: #64748b; font-weight: 600; background: #f8fafc; }
+    td.largo { white-space: normal; min-width: 180px; }
+    .resumen { margin: 0 0 12px; font-size: 14px; color: #334155; }
+  </style>
+</head>
+<body>
+  <div class="caja">
+    <h1>Panel de empresas</h1>
+    <p class="sub">Empresas registradas en la app y su actividad. Solo para vos.</p>
+
+    <form id="form">
+      <input type="password" id="clave" placeholder="Clave de la plataforma" autocomplete="current-password" />
+      <button type="submit">Ver empresas</button>
+    </form>
+    <p class="error" id="error" style="display:none;"></p>
+    <p class="resumen" id="resumen" style="display:none;"></p>
+
+    <div class="tabla-wrap" id="tabla-wrap" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Empresa</th><th>Código</th><th>Alta</th><th>Administrador/es</th>
+            <th>Personal</th><th>Cuentas</th><th>Fichajes (30 días)</th><th>Último fichaje</th>
+          </tr>
+        </thead>
+        <tbody id="cuerpo"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    function fecha(valor) {
+      if (!valor) return "—";
+      var d = new Date(valor);
+      return d.toLocaleDateString("es-AR") + " " + d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    document.getElementById("form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var error = document.getElementById("error");
+      error.style.display = "none";
+      try {
+        var res = await fetch("/api/plataforma/empresas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clave: document.getElementById("clave").value }),
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.error || "No se pudo cargar la lista.");
+
+        var cuerpo = document.getElementById("cuerpo");
+        cuerpo.innerHTML = "";
+        data.forEach(function (emp) {
+          var tr = document.createElement("tr");
+          [
+            [emp.nombre, true], [emp.codigo], [fecha(emp.creado_en)], [emp.admins || "—", true],
+            [emp.empleados], [emp.cuentas], [emp.movimientos30d], [fecha(emp.ultimoMovimiento)],
+          ].forEach(function (celda) {
+            var td = document.createElement("td");
+            if (celda[1]) td.className = "largo";
+            td.textContent = String(celda[0]); // textContent: los nombres los escriben los clientes
+            tr.appendChild(td);
+          });
+          cuerpo.appendChild(tr);
+        });
+
+        var resumen = document.getElementById("resumen");
+        resumen.textContent = data.length + " empresa(s) registrada(s).";
+        resumen.style.display = "block";
+        document.getElementById("tabla-wrap").style.display = data.length ? "block" : "none";
+      } catch (err) {
+        error.textContent = err.message;
+        error.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -4,6 +4,7 @@
   var API_URL = window.location.origin + "/api";
   var TOKEN_KEY = "control-accesos:token";
   var ROL_KEY = "control-accesos:rol";
+  var EMPRESA_KEY = "control-accesos:empresa"; // nombre de la empresa, solo para mostrarlo
   var CACHE_KEY = "control-accesos:cache"; // último estado conocido (empleados, movimientos, turnos)
   var COLA_KEY = "control-accesos:cola-offline"; // marcas hechas sin conexión, pendientes de sincronizar
 
@@ -43,6 +44,10 @@
   function limpiarToken() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ROL_KEY);
+    localStorage.removeItem(EMPRESA_KEY);
+    // La caché guarda datos de la empresa que estaba usando este dispositivo:
+    // la borramos para que otra empresa nunca vea datos ajenos.
+    localStorage.removeItem(CACHE_KEY);
   }
 
   // --- Caché local (para poder mostrar datos aunque no haya conexión) ---
@@ -260,6 +265,15 @@
     document.getElementById("app-wrap").style.display = "block";
     document.getElementById("btn-abrir-modal").style.display = esAdmin() ? "flex" : "none";
     document.getElementById("btn-abrir-usuarios").style.display = esAdmin() ? "flex" : "none";
+    document.getElementById("empresa-nombre").textContent = localStorage.getItem(EMPRESA_KEY) || "";
+  }
+
+  // Guarda la sesión que devolvió el servidor y entra a la app
+  async function completarLogin(data) {
+    setToken(data.token);
+    setRol(data.rol);
+    if (data.empresa) localStorage.setItem(EMPRESA_KEY, data.empresa);
+    await iniciarApp();
   }
 
   async function manejarLogin(e) {
@@ -282,37 +296,152 @@
       });
       var data = await res.json();
       if (!res.ok) {
+        if (data.noVerificado && data.email) {
+          // Cuenta creada pero con el mail sin confirmar: pasamos a pedir el código.
+          document.getElementById("form-login").reset();
+          mostrarVerificacion(data.email, true);
+          return;
+        }
         err.textContent = data.error || "No se pudo iniciar sesión.";
         err.style.display = "block";
         return;
       }
-      setToken(data.token);
-      setRol(data.rol);
       err.style.display = "none";
       document.getElementById("form-login").reset();
-      await iniciarApp();
+      await completarLogin(data);
     } catch (e2) {
       err.textContent = "No se pudo conectar con el servidor (¿está corriendo el backend?).";
       err.style.display = "block";
     }
   }
 
-  function mostrarTabLogin() {
-    document.getElementById("tab-login").classList.add("active");
-    document.getElementById("tab-registro").classList.remove("active");
-    document.getElementById("form-login").style.display = "block";
-    document.getElementById("form-registro").style.display = "none";
+  // Muestra una sola pantalla del cuadro de acceso (login, empleado, empresa o verificación)
+  function mostrarPantallaAcceso(cual) {
+    var pantallas = { login: "form-login", registro: "form-registro", empresa: "form-empresa", verificar: "form-verificar" };
+    var tabs = { login: "tab-login", registro: "tab-registro", empresa: "tab-empresa" };
+    Object.keys(pantallas).forEach(function (k) {
+      document.getElementById(pantallas[k]).style.display = k === cual ? "block" : "none";
+    });
+    Object.keys(tabs).forEach(function (k) {
+      document.getElementById(tabs[k]).classList.toggle("active", k === cual);
+    });
   }
 
-  function mostrarTabRegistro() {
-    document.getElementById("tab-registro").classList.add("active");
-    document.getElementById("tab-login").classList.remove("active");
-    document.getElementById("form-registro").style.display = "block";
-    document.getElementById("form-login").style.display = "none";
+  function mostrarTabLogin() { mostrarPantallaAcceso("login"); }
+  function mostrarTabRegistro() { mostrarPantallaAcceso("registro"); }
+  function mostrarTabEmpresa() { mostrarPantallaAcceso("empresa"); }
+
+  var emailPorVerificar = "";
+
+  // Pantalla para escribir el código que llegó por mail. Si pedirNuevo, se envía uno nuevo.
+  async function mostrarVerificacion(email, pedirNuevo) {
+    emailPorVerificar = email;
+    mostrarPantallaAcceso("verificar");
+    document.getElementById("verificar-texto").textContent = "Te enviamos un código de 6 dígitos a " + email + ". Revisá también la carpeta de spam.";
+    document.getElementById("verificar-error").style.display = "none";
+    document.getElementById("verificar-exito").style.display = "none";
+    document.getElementById("verificar-codigo").value = "";
+    document.getElementById("verificar-codigo").focus();
+    if (pedirNuevo) await reenviarVerificacion();
+  }
+
+  async function reenviarVerificacion() {
+    var err = document.getElementById("verificar-error");
+    var exito = document.getElementById("verificar-exito");
+    err.style.display = "none";
+    exito.style.display = "none";
+    try {
+      var res = await fetch(API_URL + "/empresas/reenviar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailPorVerificar }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        err.textContent = data.error || "No se pudo reenviar el código.";
+        err.style.display = "block";
+        return;
+      }
+      exito.textContent = "Listo, te enviamos un código nuevo.";
+      exito.style.display = "block";
+    } catch (e2) {
+      err.textContent = "No se pudo conectar con el servidor.";
+      err.style.display = "block";
+    }
+  }
+
+  async function manejarVerificar(e) {
+    e.preventDefault();
+    var codigo = document.getElementById("verificar-codigo").value.trim();
+    var err = document.getElementById("verificar-error");
+    err.style.display = "none";
+    if (!codigo) {
+      err.textContent = "Escribí el código que te enviamos.";
+      err.style.display = "block";
+      return;
+    }
+    try {
+      var res = await fetch(API_URL + "/empresas/verificar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailPorVerificar, codigo: codigo }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        err.textContent = data.error || "No se pudo confirmar la cuenta.";
+        err.style.display = "block";
+        return;
+      }
+      document.getElementById("form-verificar").reset();
+      await completarLogin(data);
+    } catch (e2) {
+      err.textContent = "No se pudo conectar con el servidor.";
+      err.style.display = "block";
+    }
+  }
+
+  async function manejarCrearEmpresa(e) {
+    e.preventDefault();
+    var empresa = document.getElementById("empresa-nombre-nuevo").value.trim();
+    var usuario = document.getElementById("empresa-usuario").value.trim();
+    var email = document.getElementById("empresa-email").value.trim();
+    var password = document.getElementById("empresa-password").value;
+    var err = document.getElementById("empresa-error");
+    err.style.display = "none";
+
+    if (!empresa || !usuario || !email || !password) {
+      err.textContent = "Completá todos los campos.";
+      err.style.display = "block";
+      return;
+    }
+
+    try {
+      var res = await fetch(API_URL + "/empresas/registro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresa: empresa, usuario: usuario, email: email, password: password }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        err.textContent = data.error || "No se pudo crear la empresa.";
+        err.style.display = "block";
+        return;
+      }
+      document.getElementById("form-empresa").reset();
+      if (data.token) {
+        await completarLogin(data);
+      } else {
+        await mostrarVerificacion(data.email || email, false);
+      }
+    } catch (e2) {
+      err.textContent = "No se pudo conectar con el servidor.";
+      err.style.display = "block";
+    }
   }
 
   async function manejarRegistro(e) {
     e.preventDefault();
+    var codigoEmpresa = document.getElementById("registro-codigo-empresa").value.trim();
     var usuario = document.getElementById("registro-usuario").value.trim();
     var email = document.getElementById("registro-email").value.trim();
     var documento = document.getElementById("registro-documento").value.trim();
@@ -323,7 +452,7 @@
     err.style.display = "none";
     exito.style.display = "none";
 
-    if (!usuario || !email || !documento || !password) {
+    if (!codigoEmpresa || !usuario || !email || !documento || !password) {
       err.textContent = "Completá todos los campos.";
       err.style.display = "block";
       return;
@@ -333,7 +462,7 @@
       var res = await fetch(API_URL + "/registro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usuario: usuario, email: email, documento: documento, password: password }),
+        body: JSON.stringify({ codigoEmpresa: codigoEmpresa, usuario: usuario, email: email, documento: documento, password: password }),
       });
       var data = await res.json();
       if (!res.ok) {
@@ -520,7 +649,10 @@
   }
 
   function hoyISO() {
-    return new Date().toISOString().slice(0, 10);
+    // Fecha de hoy según el reloj del dispositivo (con toISOString daría el día siguiente después de las 21:00)
+    var d = new Date();
+    function dos(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "-" + dos(d.getMonth() + 1) + "-" + dos(d.getDate());
   }
 
   function tiempoDentro(empleado) {
@@ -1004,9 +1136,10 @@
     var empleadoId = document.getElementById("manual-empleado-id").value;
     var movId = document.getElementById("manual-movimiento-id").value;
     var fechaHora = document.getElementById("manual-fecha-hora").value;
+    var instante = new Date(fechaHora);
     var err = document.getElementById("manual-error");
 
-    if (!fechaHora) {
+    if (!fechaHora || isNaN(instante.getTime())) {
       err.textContent = "Ingresá la fecha y la hora.";
       err.style.display = "block";
       return;
@@ -1015,7 +1148,7 @@
 
     try {
       if (movId) {
-        var r = await apiPut("/movimientos/" + movId, { fechaHora: fechaHora });
+        var r = await apiPut("/movimientos/" + movId, { fechaHora: instante.toISOString() });
         movimientos = movimientos.map(function (m) {
           return m.id === movId
             ? Object.assign({}, m, { timestamp: r.movimiento.timestamp, llegoTarde: r.movimiento.llegoTarde, minutosTarde: r.movimiento.minutosTarde })
@@ -1028,7 +1161,7 @@
         var data = await apiPost("/movimientos/manual", {
           empleadoId: empleadoId,
           tipo: document.getElementById("manual-tipo").value,
-          fechaHora: fechaHora,
+          fechaHora: instante.toISOString(),
         });
         movimientos.push(data.movimiento);
         empleados = empleados.map(function (emp) { return emp.id === data.empleado.id ? data.empleado : emp; });
@@ -1160,8 +1293,22 @@
 
   var usuariosCache = [];
 
+  async function cargarCodigoEmpresa() {
+    var bloque = document.getElementById("empresa-codigo-info");
+    try {
+      var emp = await apiGet("/empresa");
+      if (emp.codigo) {
+        document.getElementById("empresa-codigo").textContent = emp.codigo;
+        bloque.style.display = "block";
+      }
+    } catch (e) {
+      bloque.style.display = "none";
+    }
+  }
+
   function abrirModalUsuarios() {
     document.getElementById("modal-usuarios-overlay").classList.add("open");
+    cargarCodigoEmpresa();
     cargarUsuarios();
     actualizarSelectEmpleadoVinculado();
   }
@@ -1399,6 +1546,10 @@
     document.getElementById("form-registro").addEventListener("submit", manejarRegistro);
     document.getElementById("tab-login").addEventListener("click", mostrarTabLogin);
     document.getElementById("tab-registro").addEventListener("click", mostrarTabRegistro);
+    document.getElementById("tab-empresa").addEventListener("click", mostrarTabEmpresa);
+    document.getElementById("form-empresa").addEventListener("submit", manejarCrearEmpresa);
+    document.getElementById("form-verificar").addEventListener("submit", manejarVerificar);
+    document.getElementById("btn-reenviar-verificacion").addEventListener("click", reenviarVerificacion);
     document.getElementById("btn-logout").addEventListener("click", manejarLogout);
 
     setInterval(actualizarReloj, 30000);

@@ -1,7 +1,7 @@
 {
   "name": "control-accesos-backend",
-  "version": "1.1.0",
-  "description": "API backend para el sistema de Control de Acceso, conectado a MySQL, con login",
+  "version": "2.0.0",
+  "description": "Control de acceso multiempresa: API + app web, MySQL, login con roles",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
