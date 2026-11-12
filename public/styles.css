@@ -137,3 +137,6 @@ ul.list li:hover { background: #f8fafc; }
 .field select { width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; font: inherit; background: #fff; }
 
 .login-tab { font-size: 12px; padding: 8px 4px; }
+
+/* El cartel de recuperar acceso se abre desde la pantalla de inicio de sesión: tiene que quedar por encima de ella */
+#modal-recuperar-overlay { z-index: 150; }
