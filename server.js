@@ -11,7 +11,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const ExcelJS = require("exceljs");
-const { enviarEmail } = require("./correo");
+const { enviarEmail, correoConfigurado } = require("./correo");
 const { asegurarEsquema, generarCodigoEmpresa, uid } = require("./esquema");
 
 const app = express();
@@ -102,6 +102,19 @@ app.get("/api/salud", (req, res) => {
   res.json({ ok: true });
 });
 
+// Datos públicos que la pantalla de acceso necesita para mostrarse bien
+function invitacionConfigurada() {
+  return !!(process.env.INVITACION_EMPRESAS && process.env.INVITACION_EMPRESAS.length >= 6);
+}
+
+app.get("/api/config", (req, res) => {
+  res.json({
+    requiereInvitacion: invitacionConfigurada(),
+    correoActivo: correoConfigurado(),
+    soporte: process.env.SOPORTE_CONTACTO || "",
+  });
+});
+
 // --- CÓDIGOS POR MAIL (activar cuenta / restablecer contraseña) ---
 
 function generarCodigo() {
@@ -173,7 +186,16 @@ app.post(
   "/api/empresas/registro",
   limitar({ max: 10, ventanaMs: 60 * 60 * 1000 }),
   async (req, res) => {
-    const { empresa, usuario, email, password } = req.body || {};
+    const { empresa, usuario, email, password, invitacion } = req.body || {};
+
+    // Si hay un código de invitación configurado, solo puede crear una empresa quien lo conozca.
+    // Ese código lo entregás vos a cada cliente: por eso, con invitación no hace falta confirmar el mail.
+    const conInvitacion = invitacionConfigurada();
+    if (conInvitacion) {
+      const a = crypto.createHash("sha256").update(String(invitacion || "").trim()).digest();
+      const b = crypto.createHash("sha256").update(process.env.INVITACION_EMPRESAS).digest();
+      if (!crypto.timingSafeEqual(a, b)) return res.status(403).json({ error: "El código de invitación es incorrecto. Pedíselo a quien te vendió la app." });
+    }
 
     if (typeof empresa !== "string" || !empresa.trim()) return res.status(400).json({ error: "Escribí el nombre de la empresa." });
     if (empresa.trim().length > 100) return res.status(400).json({ error: "El nombre de la empresa es demasiado largo." });
@@ -187,7 +209,7 @@ app.post(
     const emailNorm = email.trim().toLowerCase();
     const usuarioNorm = usuario.trim();
     const empresaNorm = empresa.trim();
-    const verificar = process.env.VERIFICAR_EMAIL !== "false";
+    const verificar = process.env.VERIFICAR_EMAIL !== "false" && !conInvitacion;
 
     const empresaId = uid();
     const usuarioId = uid();
@@ -376,6 +398,9 @@ app.post(
   limitar({ max: 5, ventanaMs: 15 * 60 * 1000, clave: (req) => "recu:" + textoClave(req, "email") }),
   async (req, res) => {
     try {
+      if (!correoConfigurado()) {
+        return res.status(503).json({ error: "Por ahora no enviamos mails. Pedile a tu administrador que te defina una contraseña nueva (si sos administrador, comunicate con quien te vendió la app)." });
+      }
       const { email } = req.body || {};
       if (!email || !emailValido(email)) {
         return res.status(400).json({ error: "Ingresá un email válido." });
@@ -405,6 +430,9 @@ app.post(
   limitar({ max: 5, ventanaMs: 15 * 60 * 1000, clave: (req) => "sol:" + textoClave(req, "email") }),
   async (req, res) => {
     try {
+      if (!correoConfigurado()) {
+        return res.status(503).json({ error: "Por ahora no enviamos mails. Pedile a tu administrador que te defina una contraseña nueva (si sos administrador, comunicate con quien te vendió la app)." });
+      }
       const { email } = req.body || {};
       if (!email || !emailValido(email)) {
         return res.status(400).json({ error: "Ingresá un email válido." });
@@ -1227,6 +1255,54 @@ app.post(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "No se pudo obtener la lista." });
+    }
+  }
+);
+
+// Definir la contraseña de un administrador (cuando se la olvidó y no hay mail): solo con la clave de la plataforma
+app.post(
+  "/api/plataforma/clave-admin",
+  limitar({ max: 10, ventanaMs: 15 * 60 * 1000 }),
+  async (req, res) => {
+    if (!process.env.PLATAFORMA_CLAVE) return res.status(404).json({ error: "No encontrado." });
+    const { clave, email, nuevaPassword } = req.body || {};
+    if (!clavePlataformaValida(clave)) return res.status(401).json({ error: "Clave incorrecta." });
+    if (!emailValido(email)) return res.status(400).json({ error: "Ingresá el email del administrador." });
+    if (typeof nuevaPassword !== "string" || nuevaPassword.length < 6 || nuevaPassword.length > 100) {
+      return res.status(400).json({ error: "La contraseña debe tener entre 6 y 100 caracteres." });
+    }
+    try {
+      const [rows] = await pool.query("SELECT id FROM usuarios WHERE email = ? AND rol = 'admin'", [email.trim().toLowerCase()]);
+      if (rows.length === 0) return res.status(404).json({ error: "No hay ningún administrador con ese email." });
+      const hash = await bcrypt.hash(nuevaPassword, 10);
+      await pool.query("UPDATE usuarios SET password_hash = ?, activo = TRUE WHERE id = ?", [hash, rows[0].id]);
+      res.json({ mensaje: "Contraseña definida. Pasásela al administrador y pedile que la cambie al entrar." });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "No se pudo definir la contraseña." });
+    }
+  }
+);
+
+// Cambiar la propia contraseña (sabiendo la actual)
+app.use("/api/cuenta", requiereLogin);
+app.post(
+  "/api/cuenta/password",
+  limitar({ max: 10, ventanaMs: 15 * 60 * 1000, clave: (req) => "cuenta:" + req.ip }),
+  async (req, res) => {
+    try {
+      const { actual, nueva } = req.body || {};
+      if (typeof actual !== "string" || typeof nueva !== "string") return res.status(400).json({ error: "Completá los dos campos." });
+      if (nueva.length < 6 || nueva.length > 100) return res.status(400).json({ error: "La nueva contraseña debe tener entre 6 y 100 caracteres." });
+      const [rows] = await pool.query("SELECT password_hash FROM usuarios WHERE id = ?", [req.usuario.id]);
+      if (rows.length === 0 || !rows[0].password_hash || !(await bcrypt.compare(actual, rows[0].password_hash))) {
+        return res.status(400).json({ error: "La contraseña actual no es correcta." });
+      }
+      await pool.query("UPDATE usuarios SET password_hash = ? WHERE id = ?", [await bcrypt.hash(nueva, 10), req.usuario.id]);
+      res.json({ mensaje: "Contraseña cambiada." });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "No se pudo cambiar la contraseña." });
     }
   }
 );

@@ -79,4 +79,9 @@ async function enviarEmail(destinatario, asunto, texto) {
   });
 }
 
-module.exports = { enviarEmail };
+// ¿Hay algún servicio de correo cargado en Railway? Si no, la app avisa en vez de fallar.
+function correoConfigurado() {
+  return !!(process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SMTP_HOST);
+}
+
+module.exports = { enviarEmail, correoConfigurado };

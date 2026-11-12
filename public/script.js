@@ -246,6 +246,16 @@
     mostrarLogin("Tu sesión venció. Iniciá sesión de nuevo.");
   }
 
+  var configPublica = { requiereInvitacion: false, correoActivo: true, soporte: "" };
+
+  async function cargarConfigPublica() {
+    try {
+      var res = await fetch(API_URL + "/config");
+      if (res.ok) configPublica = await res.json();
+    } catch (e) { /* sin conexión: dejamos los valores por defecto */ }
+    document.getElementById("campo-invitacion").style.display = configPublica.requiereInvitacion ? "block" : "none";
+  }
+
   function mostrarLogin(mensajeError) {
     document.getElementById("app-wrap").style.display = "none";
     document.getElementById("login-overlay").style.display = "flex";
@@ -409,7 +419,7 @@
     var err = document.getElementById("empresa-error");
     err.style.display = "none";
 
-    if (!empresa || !usuario || !email || !password) {
+    if (!empresa || !usuario || !email || !password || (configPublica.requiereInvitacion && !document.getElementById("empresa-invitacion").value.trim())) {
       err.textContent = "Completá todos los campos.";
       err.style.display = "block";
       return;
@@ -419,7 +429,10 @@
       var res = await fetch(API_URL + "/empresas/registro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empresa: empresa, usuario: usuario, email: email, password: password }),
+        body: JSON.stringify({
+          empresa: empresa, usuario: usuario, email: email, password: password,
+          invitacion: document.getElementById("empresa-invitacion").value.trim(),
+        }),
       });
       var data = await res.json();
       if (!res.ok) {
@@ -489,6 +502,14 @@
   function abrirModalRecuperar() {
     document.getElementById("modal-recuperar-overlay").classList.add("open");
     mostrarTabRecuperarUsuario();
+    // Sin servicio de mail no se pueden mandar códigos: explicamos cómo recuperar el acceso.
+    var sinCorreo = !configPublica.correoActivo;
+    document.getElementById("recuperar-sin-correo").style.display = sinCorreo ? "block" : "none";
+    document.getElementById("recuperar-tabs").style.display = sinCorreo ? "none" : "flex";
+    document.getElementById("form-recuperar-usuario").style.display = sinCorreo ? "none" : "block";
+    var soporte = document.getElementById("recuperar-soporte");
+    soporte.textContent = configPublica.soporte ? "Contacto: " + configPublica.soporte : "";
+    soporte.style.display = sinCorreo && configPublica.soporte ? "block" : "none";
   }
 
   function cerrarModalRecuperar() {
@@ -622,6 +643,43 @@
     } catch (e2) {
       err.textContent = "No se pudo conectar con el servidor.";
       err.style.display = "block";
+    }
+  }
+
+  function abrirModalCuenta() {
+    document.getElementById("form-cuenta").reset();
+    document.getElementById("cuenta-error").style.display = "none";
+    document.getElementById("cuenta-exito").style.display = "none";
+    document.getElementById("modal-cuenta-overlay").classList.add("open");
+  }
+
+  function cerrarModalCuenta() {
+    document.getElementById("modal-cuenta-overlay").classList.remove("open");
+  }
+
+  async function guardarCuenta(e) {
+    e.preventDefault();
+    var err = document.getElementById("cuenta-error");
+    var exito = document.getElementById("cuenta-exito");
+    err.style.display = "none";
+    exito.style.display = "none";
+    var actual = document.getElementById("cuenta-actual").value;
+    var nueva = document.getElementById("cuenta-nueva").value;
+    if (!actual || !nueva) {
+      err.textContent = "Completá los dos campos.";
+      err.style.display = "block";
+      return;
+    }
+    try {
+      var data = await apiPost("/cuenta/password", { actual: actual, nueva: nueva });
+      document.getElementById("form-cuenta").reset();
+      exito.textContent = data.mensaje || "Contraseña cambiada.";
+      exito.style.display = "block";
+    } catch (e2) {
+      if (e2.message !== "Sesión vencida") {
+        err.textContent = e2.message;
+        err.style.display = "block";
+      }
     }
   }
 
@@ -1551,6 +1609,13 @@
     document.getElementById("form-verificar").addEventListener("submit", manejarVerificar);
     document.getElementById("btn-reenviar-verificacion").addEventListener("click", reenviarVerificacion);
     document.getElementById("btn-logout").addEventListener("click", manejarLogout);
+    document.getElementById("btn-cuenta").addEventListener("click", abrirModalCuenta);
+    document.getElementById("btn-cerrar-cuenta").addEventListener("click", cerrarModalCuenta);
+    document.getElementById("form-cuenta").addEventListener("submit", guardarCuenta);
+    document.getElementById("modal-cuenta-overlay").addEventListener("click", function (e) {
+      if (e.target.id === "modal-cuenta-overlay") cerrarModalCuenta();
+    });
+    cargarConfigPublica();
 
     setInterval(actualizarReloj, 30000);
     setInterval(renderLista, 60000); // refresca los "hace Xm" de quienes están adentro

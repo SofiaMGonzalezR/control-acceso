@@ -61,6 +61,10 @@
 
     <form id="form-empresa" style="display:none;">
       <p class="subtitle" style="margin-bottom:14px;">Creá tu empresa y tu cuenta de administrador. Después vas a poder cargar a tu personal y crear las cuentas de tus empleados.</p>
+      <div class="field" id="campo-invitacion" style="display:none;">
+        <label>Código de invitación</label>
+        <input type="text" id="empresa-invitacion" placeholder="Te lo dio quien te vendió la app" autocomplete="off" />
+      </div>
       <div class="field">
         <label>Nombre de la empresa</label>
         <input type="text" id="empresa-nombre-nuevo" maxlength="100" />
@@ -109,6 +113,7 @@
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="btn-primary" id="btn-abrir-modal">+ Agregar persona</button>
       <button class="btn-logout" id="btn-abrir-usuarios" title="Gestionar usuarios">&#128273;</button>
+      <button class="btn-logout" id="btn-cuenta" title="Cambiar mi contraseña">&#128274;</button>
       <button class="btn-logout" id="btn-logout" title="Cerrar sesión">&#8618;</button>
     </div>
   </div>
@@ -231,6 +236,28 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-cuenta-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Cambiar mi contraseña</h2>
+      <button class="modal-close" id="btn-cerrar-cuenta">&#10005;</button>
+    </div>
+    <form id="form-cuenta">
+      <div class="field">
+        <label>Contraseña actual</label>
+        <input type="password" id="cuenta-actual" autocomplete="current-password" />
+      </div>
+      <div class="field">
+        <label>Contraseña nueva (mínimo 6 caracteres)</label>
+        <input type="password" id="cuenta-nueva" autocomplete="new-password" />
+      </div>
+      <p class="error-text" id="cuenta-error" style="display:none;"></p>
+      <p class="success-text" id="cuenta-exito" style="display:none;"></p>
+      <button type="submit" class="btn-submit">Guardar contraseña</button>
+    </form>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-recuperar-overlay">
   <div class="modal">
     <div class="modal-header">
@@ -238,7 +265,13 @@
       <button class="modal-close" id="btn-cerrar-recuperar">&#10005;</button>
     </div>
 
-    <div class="login-tabs">
+    <div id="recuperar-sin-correo" style="display:none;">
+      <p class="subtitle" style="margin-bottom:12px;"><b>Si sos empleado:</b> pedile a tu administrador que te defina una contraseña nueva desde &quot;Gestionar usuarios&quot; (botón &quot;Definir clave&quot;).</p>
+      <p class="subtitle" style="margin-bottom:12px;"><b>Si sos administrador:</b> comunicate con quien te vendió la app para que te defina una contraseña nueva.</p>
+      <p class="subtitle" id="recuperar-soporte" style="display:none; font-weight:600;"></p>
+    </div>
+
+    <div class="login-tabs" id="recuperar-tabs">
       <button type="button" class="login-tab active" id="tab-recuperar-usuario">Olvidé mi usuario</button>
       <button type="button" class="login-tab" id="tab-recuperar-password">Olvidé mi contraseña</button>
     </div>
