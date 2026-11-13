@@ -1227,8 +1227,11 @@ app.get("/api/movimientos", async (req, res) => {
 // Muestra las empresas registradas y su actividad, nunca los datos de las personas.
 
 function clavePlataformaValida(clave) {
-  const esperada = process.env.PLATAFORMA_CLAVE;
+  // Se ignoran espacios o comillas sobrantes al principio/final (suelen colarse al copiar y pegar en Railway).
+  const limpiar = (s) => String(s).trim().replace(/^["']+|["']+$/g, "").trim();
+  const esperada = process.env.PLATAFORMA_CLAVE ? limpiar(process.env.PLATAFORMA_CLAVE) : "";
   if (!esperada || esperada.length < 12 || typeof clave !== "string") return false;
+  clave = limpiar(clave);
   const a = crypto.createHash("sha256").update(clave).digest();
   const b = crypto.createHash("sha256").update(esperada).digest();
   return crypto.timingSafeEqual(a, b);
@@ -1239,6 +1242,9 @@ app.post(
   limitar({ max: 10, ventanaMs: 15 * 60 * 1000 }),
   async (req, res) => {
     if (!process.env.PLATAFORMA_CLAVE) return res.status(404).json({ error: "No encontrado." });
+    if (process.env.PLATAFORMA_CLAVE.trim().length < 12) {
+      return res.status(401).json({ error: "La variable PLATAFORMA_CLAVE en Railway tiene menos de 12 caracteres. Cargá una más larga." });
+    }
     if (!clavePlataformaValida((req.body || {}).clave)) return res.status(401).json({ error: "Clave incorrecta." });
     try {
       const [rows] = await pool.query(
