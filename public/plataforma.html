@@ -42,11 +42,23 @@
         <thead>
           <tr>
             <th>Empresa</th><th>Código</th><th>Alta</th><th>Administrador/es</th>
-            <th>Personal</th><th>Cuentas</th><th>Fichajes (30 días)</th><th>Último fichaje</th>
+            <th>Personal / capacidad</th><th>Cuentas</th><th>Fichajes (30 días)</th><th>Último fichaje</th>
           </tr>
         </thead>
         <tbody id="cuerpo"></tbody>
       </table>
+    </div>
+
+    <div class="caja-clave" id="caja-limite" style="display:none;">
+      <h2>Capacidad de personal de una empresa</h2>
+      <p class="sub">El plan base incluye 10 personas. Cuando un cliente pague una ampliación, elegí su empresa y cargá la nueva cantidad.</p>
+      <form id="form-limite">
+        <select id="limite-empresa"></select>
+        <input type="number" id="limite-nuevo" min="1" max="100000" step="1" placeholder="Cantidad de personas" />
+        <button type="submit">Cambiar capacidad</button>
+      </form>
+      <p class="error" id="limite-error" style="display:none;"></p>
+      <p class="ok" id="limite-ok" style="display:none;"></p>
     </div>
 
     <div class="caja-clave" id="caja-clave" style="display:none;">
@@ -88,7 +100,7 @@
           var tr = document.createElement("tr");
           [
             [emp.nombre, true], [emp.codigo], [fecha(emp.creado_en)], [emp.admins || "—", true],
-            [emp.empleados], [emp.cuentas], [emp.movimientos30d], [fecha(emp.ultimoMovimiento)],
+            [emp.empleados + " / " + emp.limite], [emp.cuentas], [emp.movimientos30d], [fecha(emp.ultimoMovimiento)],
           ].forEach(function (celda) {
             var td = document.createElement("td");
             if (celda[1]) td.className = "largo";
@@ -103,6 +115,49 @@
         resumen.style.display = "block";
         document.getElementById("tabla-wrap").style.display = data.length ? "block" : "none";
         document.getElementById("caja-clave").style.display = "block";
+        document.getElementById("caja-limite").style.display = data.length ? "block" : "none";
+
+        var selector = document.getElementById("limite-empresa");
+        selector.innerHTML = "";
+        data.forEach(function (emp) {
+          var op = document.createElement("option");
+          op.value = emp.id;
+          op.textContent = emp.nombre + " (" + emp.empleados + " / " + emp.limite + ")";
+          op.dataset.limite = emp.limite;
+          selector.appendChild(op);
+        });
+        if (data.length) document.getElementById("limite-nuevo").value = data[0].limite;
+      } catch (err) {
+        error.textContent = err.message;
+        error.style.display = "block";
+      }
+    });
+
+    document.getElementById("limite-empresa").addEventListener("change", function () {
+      var op = this.options[this.selectedIndex];
+      if (op) document.getElementById("limite-nuevo").value = op.dataset.limite;
+    });
+
+    document.getElementById("form-limite").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var error = document.getElementById("limite-error");
+      var ok = document.getElementById("limite-ok");
+      error.style.display = "none";
+      ok.style.display = "none";
+      try {
+        var res = await fetch("/api/plataforma/limite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clave: document.getElementById("clave").value,
+            empresaId: document.getElementById("limite-empresa").value,
+            limite: document.getElementById("limite-nuevo").value,
+          }),
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.error || "No se pudo cambiar la capacidad.");
+        ok.textContent = data.mensaje + " Tocá \"Ver empresas\" para actualizar la lista.";
+        ok.style.display = "block";
       } catch (err) {
         error.textContent = err.message;
         error.style.display = "block";

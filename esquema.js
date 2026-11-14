@@ -43,6 +43,24 @@ async function asegurarEsquema(pool) {
     )
   `);
 
+  // Capacidad de personal contratada por cada empresa (plan base: 10). Se amplía desde el panel de la plataforma.
+  if (!(await columnaExiste(pool, "empresas", "limite_empleados"))) {
+    await pool.query("ALTER TABLE empresas ADD COLUMN limite_empleados INT NOT NULL DEFAULT 10");
+    // Las empresas que ya existían y tienen más de 10 personas conservan su cantidad actual como límite,
+    // para que nadie pierda lo que ya tenía cargado. Solo se hace una vez, al crear la columna.
+    const [tabla] = await pool.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'empleados' LIMIT 1"
+    );
+    if (tabla.length > 0) {
+      await pool
+        .query(
+          `UPDATE empresas e
+              SET e.limite_empleados = GREATEST(10, (SELECT COUNT(*) FROM empleados x WHERE x.empresa_id = e.id))`
+        )
+        .catch((e) => console.warn("AVISO: no se pudo ajustar el límite inicial:", e.message));
+    }
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS empleados (
       id VARCHAR(20) PRIMARY KEY,

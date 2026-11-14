@@ -583,6 +583,13 @@ function requiereAdmin(req, res, next) {
   next();
 }
 
+// Cuántas personas tiene cargadas una empresa y cuántas incluye su plan.
+async function cupoEmpleados(empresaId) {
+  const [[emp]] = await pool.query("SELECT limite_empleados AS limite FROM empresas WHERE id = ?", [empresaId]);
+  const [[cnt]] = await pool.query("SELECT COUNT(*) AS cargados FROM empleados WHERE empresa_id = ?", [empresaId]);
+  return { limite: emp ? Number(emp.limite) : 10, cargados: Number(cnt.cargados) };
+}
+
 // --- EMPRESA (datos de la empresa de quien inició sesión) ---
 
 app.get("/api/empresa", async (req, res) => {
@@ -590,7 +597,9 @@ app.get("/api/empresa", async (req, res) => {
     const [rows] = await pool.query("SELECT nombre, codigo FROM empresas WHERE id = ?", [req.usuario.empresaId]);
     if (rows.length === 0) return res.status(404).json({ error: "Empresa no encontrada." });
     // El código para que los empleados se registren solo lo ven los administradores.
-    res.json(req.usuario.rol === "admin" ? rows[0] : { nombre: rows[0].nombre });
+    if (req.usuario.rol !== "admin") return res.json({ nombre: rows[0].nombre });
+    const cupo = await cupoEmpleados(req.usuario.empresaId);
+    res.json({ ...rows[0], limiteEmpleados: cupo.limite, empleadosCargados: cupo.cargados });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error al obtener la empresa" });
@@ -828,6 +837,18 @@ app.post("/api/empleados", requiereAdmin, async (req, res) => {
     );
     if (existentes.length > 0) {
       return res.status(409).json({ error: "Ya existe un empleado con ese legajo o DNI." });
+    }
+
+    // Límite de personal según el plan contratado (plan base: 10).
+    const cupo = await cupoEmpleados(req.usuario.empresaId);
+    if (cupo.cargados >= cupo.limite) {
+      const contacto = (process.env.SOPORTE_CONTACTO || "").trim();
+      return res.status(403).json({
+        codigo: "LIMITE_EMPLEADOS",
+        error:
+          "Llegaste al límite de " + cupo.limite + " personas de tu plan. Para cargar más, pedí ampliar la capacidad" +
+          (contacto ? " a " + contacto : " a quien te brinda el servicio") + ".",
+      });
     }
 
     const id = uid();
@@ -1248,7 +1269,7 @@ app.post(
     if (!clavePlataformaValida((req.body || {}).clave)) return res.status(401).json({ error: "Clave incorrecta." });
     try {
       const [rows] = await pool.query(
-        `SELECT e.id, e.nombre, e.codigo, e.creado_en,
+        `SELECT e.id, e.nombre, e.codigo, e.creado_en, e.limite_empleados AS limite,
                 (SELECT COUNT(*) FROM empleados x WHERE x.empresa_id = e.id) AS empleados,
                 (SELECT COUNT(*) FROM usuarios u WHERE u.empresa_id = e.id) AS cuentas,
                 (SELECT GROUP_CONCAT(u.email SEPARATOR ', ') FROM usuarios u WHERE u.empresa_id = e.id AND u.rol = 'admin') AS admins,
@@ -1261,6 +1282,29 @@ app.post(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "No se pudo obtener la lista." });
+    }
+  }
+);
+
+// Ampliar (o reducir) la capacidad de personal de una empresa: solo con la clave de la plataforma
+app.post(
+  "/api/plataforma/limite",
+  limitar({ max: 20, ventanaMs: 15 * 60 * 1000 }),
+  async (req, res) => {
+    if (!process.env.PLATAFORMA_CLAVE) return res.status(404).json({ error: "No encontrado." });
+    const { clave, empresaId, limite } = req.body || {};
+    if (!clavePlataformaValida(clave)) return res.status(401).json({ error: "Clave incorrecta." });
+    const n = Number(limite);
+    if (!Number.isInteger(n) || n < 1 || n > 100000) {
+      return res.status(400).json({ error: "El límite debe ser un número entero entre 1 y 100000." });
+    }
+    try {
+      const [r] = await pool.query("UPDATE empresas SET limite_empleados = ? WHERE id = ?", [n, String(empresaId || "")]);
+      if (r.affectedRows === 0) return res.status(404).json({ error: "No existe esa empresa." });
+      res.json({ mensaje: "Capacidad actualizada a " + n + " personas." });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "No se pudo actualizar la capacidad." });
     }
   }
 );

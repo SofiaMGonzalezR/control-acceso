@@ -1359,6 +1359,13 @@
         document.getElementById("empresa-codigo").textContent = emp.codigo;
         bloque.style.display = "block";
       }
+      var cupo = document.getElementById("empresa-cupo");
+      if (cupo && emp.limiteEmpleados) {
+        var lleno = emp.empleadosCargados >= emp.limiteEmpleados;
+        cupo.textContent = "Personas cargadas: " + emp.empleadosCargados + " de " + emp.limiteEmpleados +
+          " (capacidad de tu plan)" + (lleno ? ". Llegaste al límite: para cargar más, pedí ampliar la capacidad." : ".");
+        cupo.style.color = lleno ? "#b91c1c" : "";
+      }
     } catch (e) {
       bloque.style.display = "none";
     }
